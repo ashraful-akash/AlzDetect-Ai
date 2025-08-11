@@ -13,61 +13,46 @@ CLASS_NAMES = ['Mild Demented', 'Moderate Demented', 'Non Demented', 'Very Mild 
 CONFIDENCE_THRESHOLD = 0.5
 MRI_VARIANCE_THRESHOLD = 0.01
 
-# Google Drive IDs for your models (replace these with your actual file IDs)
-CUSTOM_CNN_ID = "1JjP803cKMeyWH-jE25VuwLJOjBozfkgL"
-RESNET50_ID = "1AAWzPNF64apz6FNkMAnYODxyHjXMtMkL"
-XCEPTION_ID = "1coe86G1bGyeQWwAxn-sorDE6jiizmPHF"
+# Dropbox direct download URLs for your models
+CUSTOM_CNN_URL = "https://drive.usercontent.google.com/download?id=1JjP803cKMeyWH-jE25VuwLJOjBozfkgL&export=download&confirm=t&uuid=c6a29eeb-1b71-4a39-b85d-9013dd84da90"
+RESNET50_URL = "https://drive.usercontent.google.com/download?id=1AAWzPNF64apz6FNkMAnYODxyHjXMtMkL&export=download&confirm=t&uuid=4e6ae688-eb4f-43a5-a983-e136427e6fae"
+XCEPTION_URL = "https://drive.usercontent.google.com/download?id=1coe86G1bGyeQWwAxn-sorDE6jiizmPHF&export=download&confirm=t&uuid=86b85896-2405-4b6e-b9e9-6602e03d73e1"
 
 # Local filenames
 CUSTOM_CNN_FILE = "custom_cnn.keras"
 RESNET50_FILE = "resnet50.keras"
 XCEPTION_FILE = "xception.keras"
 
-def download_file_from_google_drive(file_id, destination):
-    """Download a file from Google Drive if it doesn't exist."""
+def download_file_from_dropbox(url, destination):
     if os.path.exists(destination):
         st.info(f"Model file '{destination}' already exists locally.")
         return
 
-    def get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                return value
-        return None
+    st.info(f"Downloading model file '{destination}' from gdrive...")
+    response = requests.get(url, stream=True)
+    if response.status_code != 200:
+        st.error(f"Failed to download {destination} from gdrive. Status code: {response.status_code}")
+        return
 
-    def save_response_content(response, destination):
-        CHUNK_SIZE = 32768
-        total_size = int(response.headers.get('content-length', 0))
+    total_size = int(response.headers.get('content-length', 0))
+    bytes_downloaded = 0
+    CHUNK_SIZE = 32768
+
+    with open(destination, "wb") as f:
         progress_bar = st.progress(0)
-        bytes_downloaded = 0
-
-        with open(destination, "wb") as f:
-            for chunk in response.iter_content(CHUNK_SIZE):
-                if chunk:
-                    f.write(chunk)
-                    bytes_downloaded += len(chunk)
-                    if total_size:
-                        progress_bar.progress(min(bytes_downloaded / total_size, 1.0))
+        for chunk in response.iter_content(CHUNK_SIZE):
+            if chunk:
+                f.write(chunk)
+                bytes_downloaded += len(chunk)
+                if total_size:
+                    progress_bar.progress(min(bytes_downloaded / total_size, 1.0))
         progress_bar.empty()
-
-    URL = "https://docs.google.com/uc?export=download"
-
-    session = requests.Session()
-    response = session.get(URL, params={'id': file_id}, stream=True)
-    token = get_confirm_token(response)
-
-    if token:
-        params = {'id': file_id, 'confirm': token}
-        response = session.get(URL, params=params, stream=True)
-
-    st.info(f"Downloading model file '{destination}' from Google Drive...")
-    save_response_content(response, destination)
     st.success(f"Downloaded '{destination}' successfully.")
 
-# Call downloads at app startup (before loading models)
-download_file_from_google_drive(CUSTOM_CNN_ID, CUSTOM_CNN_FILE)
-download_file_from_google_drive(RESNET50_ID, RESNET50_FILE)
-download_file_from_google_drive(XCEPTION_ID, XCEPTION_FILE)
+# Download models before loading
+download_file_from_gdrive(CUSTOM_CNN_URL, CUSTOM_CNN_FILE)
+download_file_from_gdrive(RESNET50_URL, RESNET50_FILE)
+download_file_from_gdrive(XCEPTION_URL, XCEPTION_FILE)
 
 # LOAD MODELS
 @st.cache_resource
@@ -82,7 +67,7 @@ def load_resnet50():
 def load_xception():
     return load_model(XCEPTION_FILE)
 
-# PREPROCESSING FUNCTIONS (unchanged)
+# PREPROCESSING FUNCTIONS
 def preprocess_customcnn(img: Image.Image):
     img = img.convert('RGB').resize((224, 224))
     arr = np.array(img)

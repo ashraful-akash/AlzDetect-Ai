@@ -28,10 +28,10 @@ def download_file_from_dropbox(url, destination):
         st.info(f"Model file '{destination}' already exists locally.")
         return
 
-    st.info(f"Downloading model file '{destination}' from gdrive...")
+    st.info(f"Downloading model file '{destination}' from Dropbox...")
     response = requests.get(url, stream=True)
     if response.status_code != 200:
-        st.error(f"Failed to download {destination} from gdrive. Status code: {response.status_code}")
+        st.error(f"Failed to download {destination} from Dropbox. Status code: {response.status_code}")
         return
 
     total_size = int(response.headers.get('content-length', 0))
@@ -50,9 +50,9 @@ def download_file_from_dropbox(url, destination):
     st.success(f"Downloaded '{destination}' successfully.")
 
 # Download models before loading
-download_file_from_gdrive(CUSTOM_CNN_URL, CUSTOM_CNN_FILE)
-download_file_from_gdrive(RESNET50_URL, RESNET50_FILE)
-download_file_from_gdrive(XCEPTION_URL, XCEPTION_FILE)
+download_file_from_dropbox(CUSTOM_CNN_URL, CUSTOM_CNN_FILE)
+download_file_from_dropbox(RESNET50_URL, RESNET50_FILE)
+download_file_from_dropbox(XCEPTION_URL, XCEPTION_FILE)
 
 # LOAD MODELS
 @st.cache_resource

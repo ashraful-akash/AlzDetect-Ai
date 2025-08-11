@@ -1,0 +1,197 @@
+import streamlit as st
+import numpy as np
+from PIL import Image
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+import os
+import requests
+
+# CONFIG
+st.set_page_config(page_title="Alzheimer's MRI Classifier", layout="centered")
+
+CLASS_NAMES = ['Mild Demented', 'Moderate Demented', 'Non Demented', 'Very Mild Demented']
+CONFIDENCE_THRESHOLD = 0.5
+MRI_VARIANCE_THRESHOLD = 0.01
+
+# Google Drive IDs for your models (replace these with your actual file IDs)
+CUSTOM_CNN_ID = "1JjP803cKMeyWH-jE25VuwLJOjBozfkgL"
+RESNET50_ID = "1AAWzPNF64apz6FNkMAnYODxyHjXMtMkL"
+XCEPTION_ID = "1coe86G1bGyeQWwAxn-sorDE6jiizmPHF"
+
+# Local filenames
+CUSTOM_CNN_FILE = "custom_cnn.keras"
+RESNET50_FILE = "resnet50.keras"
+XCEPTION_FILE = "xception.keras"
+
+def download_file_from_google_drive(file_id, destination):
+    """Download a file from Google Drive if it doesn't exist."""
+    if os.path.exists(destination):
+        st.info(f"Model file '{destination}' already exists locally.")
+        return
+
+    def get_confirm_token(response):
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
+
+    def save_response_content(response, destination):
+        CHUNK_SIZE = 32768
+        total_size = int(response.headers.get('content-length', 0))
+        progress_bar = st.progress(0)
+        bytes_downloaded = 0
+
+        with open(destination, "wb") as f:
+            for chunk in response.iter_content(CHUNK_SIZE):
+                if chunk:
+                    f.write(chunk)
+                    bytes_downloaded += len(chunk)
+                    if total_size:
+                        progress_bar.progress(min(bytes_downloaded / total_size, 1.0))
+        progress_bar.empty()
+
+    URL = "https://docs.google.com/uc?export=download"
+
+    session = requests.Session()
+    response = session.get(URL, params={'id': file_id}, stream=True)
+    token = get_confirm_token(response)
+
+    if token:
+        params = {'id': file_id, 'confirm': token}
+        response = session.get(URL, params=params, stream=True)
+
+    st.info(f"Downloading model file '{destination}' from Google Drive...")
+    save_response_content(response, destination)
+    st.success(f"Downloaded '{destination}' successfully.")
+
+# Call downloads at app startup (before loading models)
+download_file_from_google_drive(CUSTOM_CNN_ID, CUSTOM_CNN_FILE)
+download_file_from_google_drive(RESNET50_ID, RESNET50_FILE)
+download_file_from_google_drive(XCEPTION_ID, XCEPTION_FILE)
+
+# LOAD MODELS
+@st.cache_resource
+def load_customcnn():
+    return load_model(CUSTOM_CNN_FILE)
+
+@st.cache_resource
+def load_resnet50():
+    return load_model(RESNET50_FILE)
+
+@st.cache_resource
+def load_xception():
+    return load_model(XCEPTION_FILE)
+
+# PREPROCESSING FUNCTIONS (unchanged)
+def preprocess_customcnn(img: Image.Image):
+    img = img.convert('RGB').resize((224, 224))
+    arr = np.array(img)
+    arr = tf.keras.applications.mobilenet_v2.preprocess_input(arr)
+    return np.expand_dims(arr, axis=0)
+
+def preprocess_resnet50(img: Image.Image):
+    img = img.convert('RGB').resize((224, 224))
+    arr = np.array(img)
+    arr = tf.keras.applications.resnet.preprocess_input(arr)
+    return np.expand_dims(arr, axis=0)
+
+def preprocess_xception(img: Image.Image):
+    img = img.convert('RGB').resize((244, 244))
+    arr = np.array(img)
+    arr = tf.keras.applications.xception.preprocess_input(arr)
+    return np.expand_dims(arr, axis=0)
+
+def majority_vote(preds_list):
+    counts = np.bincount(preds_list)
+    return np.argmax(counts)
+
+def is_probable_mri(image: Image.Image, threshold=MRI_VARIANCE_THRESHOLD) -> bool:
+    gray = image.convert("L")
+    arr = np.array(gray) / 255.0
+    variance = np.var(arr)
+    return variance > threshold
+
+def show_prediction(preds):
+    pred_idx = np.argmax(preds)
+    confidence = preds[pred_idx]
+    if confidence < CONFIDENCE_THRESHOLD:
+        st.warning("Low confidence prediction. Please upload a valid brain MRI image.")
+    else:
+        st.subheader(f"Prediction: {CLASS_NAMES[pred_idx]}")
+        st.write("Confidence Scores:")
+        for i, score in enumerate(preds):
+            st.write(f"{CLASS_NAMES[i]}: {score:.4f}")
+
+# Streamlit UI
+st.title("🧠 Alzheimer's MRI Classification")
+
+model_choice = st.selectbox(
+    "Choose Model",
+    ["Custom CNN (fastest prediction)", "ResNet50", "Xception", "Ensemble (most accurate prediction)"]
+)
+
+uploaded_file = st.file_uploader("Upload any brain MRI image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    img = Image.open(uploaded_file)
+    st.image(img, caption="Uploaded Image", use_column_width=True)
+
+    if not is_probable_mri(img):
+        st.error("Uploaded image does not appear to be a valid brain MRI. Please try again with a proper MRI scan.")
+    else:
+        try:
+            if model_choice == "Custom CNN (fastest prediction)":
+                model = load_customcnn()
+                pre = preprocess_customcnn(img)
+                with st.spinner("Predicting..."):
+                    preds = model.predict(pre)[0]
+                show_prediction(preds)
+
+            elif model_choice == "ResNet50":
+                model = load_resnet50()
+                pre = preprocess_resnet50(img)
+                with st.spinner("Predicting..."):
+                    preds = model.predict(pre)[0]
+                show_prediction(preds)
+
+            elif model_choice == "Xception":
+                model = load_xception()
+                pre = preprocess_xception(img)
+                with st.spinner("Predicting..."):
+                    preds = model.predict(pre)[0]
+                show_prediction(preds)
+
+            elif model_choice == "Ensemble (most accurate prediction)":
+                model_cnn = load_customcnn()
+                model_resnet = load_resnet50()
+                model_xcep = load_xception()
+
+                with st.spinner("Predicting with ensemble..."):
+                    preds_cnn = model_cnn.predict(preprocess_customcnn(img))[0]
+                    preds_resnet = model_resnet.predict(preprocess_resnet50(img))[0]
+                    preds_xcep = model_xcep.predict(preprocess_xception(img))[0]
+
+                preds_cnn_idx = np.argmax(preds_cnn)
+                preds_resnet_idx = np.argmax(preds_resnet)
+                preds_xcep_idx = np.argmax(preds_xcep)
+
+                final_pred = majority_vote([preds_cnn_idx, preds_resnet_idx, preds_xcep_idx])
+
+                confidences = []
+                if preds_cnn_idx == final_pred:
+                    confidences.append(preds_cnn[final_pred])
+                if preds_resnet_idx == final_pred:
+                    confidences.append(preds_resnet[final_pred])
+                if preds_xcep_idx == final_pred:
+                    confidences.append(preds_xcep[final_pred])
+                max_confidence = max(confidences) if confidences else 0.0
+
+                if max_confidence < CONFIDENCE_THRESHOLD:
+                    st.warning("Low confidence prediction in ensemble. Please upload a valid brain MRI image.")
+                else:
+                    st.subheader(f"Ensemble Prediction: {CLASS_NAMES[final_pred]}")
+                    st.write(f"Votes → CustomCNN: {CLASS_NAMES[preds_cnn_idx]}, ResNet50: {CLASS_NAMES[preds_resnet_idx]}, Xception: {CLASS_NAMES[preds_xcep_idx]}")
+                    st.write(f"Confidence: {max_confidence:.4f}")
+
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")

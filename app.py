@@ -13,7 +13,7 @@ CLASS_NAMES = ['Mild Demented', 'Moderate Demented', 'Non Demented', 'Very Mild 
 CONFIDENCE_THRESHOLD = 0.5
 MRI_VARIANCE_THRESHOLD = 0.01
 
-# Dropbox direct download URLs for your models
+# Google Drive direct download URLs for models
 CUSTOM_CNN_URL = "https://drive.usercontent.google.com/download?id=1JjP803cKMeyWH-jE25VuwLJOjBozfkgL&export=download&confirm=t&uuid=c6a29eeb-1b71-4a39-b85d-9013dd84da90"
 RESNET50_URL = "https://drive.usercontent.google.com/download?id=1AAWzPNF64apz6FNkMAnYODxyHjXMtMkL&export=download&confirm=t&uuid=4e6ae688-eb4f-43a5-a983-e136427e6fae"
 XCEPTION_URL = "https://drive.usercontent.google.com/download?id=1coe86G1bGyeQWwAxn-sorDE6jiizmPHF&export=download&confirm=t&uuid=86b85896-2405-4b6e-b9e9-6602e03d73e1"
@@ -23,15 +23,16 @@ CUSTOM_CNN_FILE = "custom_cnn.keras"
 RESNET50_FILE = "resnet50.keras"
 XCEPTION_FILE = "xception.keras"
 
-def download_file_from_dropbox(url, destination):
-    if os.path.exists(destination):
-        st.info(f"Model file '{destination}' already exists locally.")
-        return
 
-    st.info(f"Downloading model file '{destination}' from Dropbox...")
+# DOWNLOAD FUNCTION
+def download_file_from_gdrive(url, destination):
+    if os.path.exists(destination):
+        return  # Skip download silently if file exists
+
+    st.info(f"Downloading model file '{destination}' from Google Drive...")
     response = requests.get(url, stream=True)
     if response.status_code != 200:
-        st.error(f"Failed to download {destination} from Dropbox. Status code: {response.status_code}")
+        st.error(f"Failed to download {destination} from Google Drive. Status code: {response.status_code}")
         return
 
     total_size = int(response.headers.get('content-length', 0))
@@ -47,12 +48,13 @@ def download_file_from_dropbox(url, destination):
                 if total_size:
                     progress_bar.progress(min(bytes_downloaded / total_size, 1.0))
         progress_bar.empty()
-    st.success(f"Downloaded '{destination}' successfully.")
+    st.success(f"Downloaded '{destination}' successfully from Google Drive.")
 
 # Download models before loading
-download_file_from_dropbox(CUSTOM_CNN_URL, CUSTOM_CNN_FILE)
-download_file_from_dropbox(RESNET50_URL, RESNET50_FILE)
-download_file_from_dropbox(XCEPTION_URL, XCEPTION_FILE)
+download_file_from_gdrive(CUSTOM_CNN_URL, CUSTOM_CNN_FILE)
+download_file_from_gdrive(RESNET50_URL, RESNET50_FILE)
+download_file_from_gdrive(XCEPTION_URL, XCEPTION_FILE)
+
 
 # LOAD MODELS
 @st.cache_resource
@@ -107,7 +109,8 @@ def show_prediction(preds):
         for i, score in enumerate(preds):
             st.write(f"{CLASS_NAMES[i]}: {score:.4f}")
 
-# Streamlit UI
+
+# STREAMLIT UI
 st.title("🧠 Alzheimer's MRI Classification")
 
 model_choice = st.selectbox(
@@ -119,7 +122,7 @@ uploaded_file = st.file_uploader("Upload any brain MRI image", type=["jpg", "jpe
 
 if uploaded_file:
     img = Image.open(uploaded_file)
-    st.image(img, caption="Uploaded Image", use_column_width=True)
+    st.image(img, caption="Uploaded Image", use_container_width=True)  # fixed here
 
     if not is_probable_mri(img):
         st.error("Uploaded image does not appear to be a valid brain MRI. Please try again with a proper MRI scan.")
